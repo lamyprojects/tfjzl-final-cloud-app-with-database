@@ -126,3 +126,9 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 MEDIA_ROOT = os.path.join(STATIC_ROOT, 'media')
 MEDIA_URL = '/media/'
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.app.github.dev",
+    "https://*.github.dev",
+]
+
+ALLOWED_HOSTS = ["*"]
