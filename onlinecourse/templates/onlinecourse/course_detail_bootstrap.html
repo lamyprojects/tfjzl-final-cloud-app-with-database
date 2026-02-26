@@ -3,80 +3,68 @@
 <head>
     {% load static %}
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ course.name }}</title>
 
-    <title>{{ course.name }} | Course Details</title>
-
-    <!-- Bootstrap 4 -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
 </head>
 
 <body>
-    <!-- Navigation bar -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <a class="navbar-brand" href="{% url 'onlinecourse:index' %}">Home</a>
 
-        <div class="ml-auto">
-            {% if user.is_authenticated %}
-                <span class="mr-2">{{ user.first_name }} ({{ user.username }})</span>
-                <a class="btn btn-outline-secondary btn-sm" href="{% url 'onlinecourse:logout' %}">Logout</a>
-            {% else %}
-                <form class="form-inline" action="{% url 'onlinecourse:login' %}" method="post">
-                    {% csrf_token %}
-                    <input type="text" class="form-control form-control-sm mr-2" placeholder="Username" name="username">
-                    <input type="password" class="form-control form-control-sm mr-2" placeholder="Password" name="psw">
-                    <button class="btn btn-primary btn-sm mr-2" type="submit">Login</button>
-                    <a class="btn btn-link btn-sm" href="{% url 'onlinecourse:registration' %}">Sign Up</a>
-                </form>
-            {% endif %}
-        </div>
-    </nav>
+<div class="container mt-4">
 
-    <!-- Page content -->
-    <div class="container mt-4">
-        <!-- Course name -->
-        <div class="jumbotron py-4">
-            <h1 class="display-5 mb-0">{{ course.name }}</h1>
-        </div>
+    <h1 class="mb-4">{{ course.name }}</h1>
 
-        <!-- Lessons list -->
-        <h3 class="mb-3">Lessons</h3>
-
-        {% if course.lesson_set.all %}
-            <div class="accordion" id="lessonsAccordion">
-                {% for lesson in course.lesson_set.all %}
-                    <div class="card mb-2">
-                        <div class="card-header" id="heading{{ lesson.id }}">
-                            <h5 class="mb-0">
-                                <button class="btn btn-link" type="button"
-                                        data-toggle="collapse"
-                                        data-target="#collapse{{ lesson.id }}"
-                                        aria-expanded="false"
-                                        aria-controls="collapse{{ lesson.id }}">
-                                    Lesson {{ forloop.counter }}: {{ lesson.title }}
-                                </button>
-                            </h5>
-                        </div>
-
-                        <div id="collapse{{ lesson.id }}"
-                             class="collapse"
-                             aria-labelledby="heading{{ lesson.id }}"
-                             data-parent="#lessonsAccordion">
-                            <div class="card-body">
-                                {{ lesson.content }}
-                            </div>
-                        </div>
-                    </div>
-                {% endfor %}
+    <!-- Lessons Section -->
+    <h3>Lessons</h3>
+    {% for lesson in course.lesson_set.all %}
+        <div class="card mb-3">
+            <div class="card-header">
+                Lesson {{ lesson.order|add:1 }}: {{ lesson.title }}
             </div>
-        {% else %}
-            <div class="alert alert-info">No lessons available for this course yet.</div>
-        {% endif %}
-    </div>
+            <div class="card-body">
+                {{ lesson.content }}
+            </div>
+        </div>
+    {% endfor %}
 
-    <!-- Bootstrap JS -->
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <hr>
+
+    <!-- Exam Section -->
+    <h3 class="mt-5">Final Exam</h3>
+
+    <form method="post" action="{% url 'onlinecourse:submit' course.id %}">
+        {% csrf_token %}
+
+        {% for question in course.question_set.all %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <strong>{{ question.question_text }}</strong>
+                </div>
+                <div class="card-body">
+
+                    {% for choice in question.choice_set.all %}
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="choice{{ choice.id }}"
+                                   value="{{ choice.id }}">
+                            <label class="form-check-label">
+                                {{ choice.choice_text }}
+                            </label>
+                        </div>
+                    {% endfor %}
+
+                </div>
+            </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-success btn-lg">
+            Submit Exam
+        </button>
+
+    </form>
+
+</div>
+
 </body>
 </html>
