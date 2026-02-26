@@ -1,20 +1,13 @@
-import logging
-
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
+from django.shortcuts import render
 from django.http import HttpResponseRedirect
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views import generic
+from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.models import User
+import logging
 
-# <HINT> Import any new Models here
-from .models import (
-    Course,
-    Enrollment,
-    Submission,
-    Choice,
-)
-
+from .models import Course, Enrollment, Question, Choice, Submission
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +21,12 @@ def registration_request(request):
         password = request.POST['psw']
         first_name = request.POST['firstname']
         last_name = request.POST['lastname']
-
         user_exist = False
         try:
             User.objects.get(username=username)
             user_exist = True
         except Exception:
-            logger.info("New user registration")
+            logger.error("New user")
 
         if not user_exist:
             user = User.objects.create_user(
@@ -45,9 +37,8 @@ def registration_request(request):
             )
             login(request, user)
             return redirect("onlinecourse:index")
-        else:
-            context['message'] = "User already exists."
-            return render(request, 'onlinecourse/user_registration_bootstrap.html', context)
+        context['message'] = "User already exists."
+        return render(request, 'onlinecourse/user_registration_bootstrap.html', context)
 
 
 def login_request(request):
@@ -59,11 +50,9 @@ def login_request(request):
         if user is not None:
             login(request, user)
             return redirect('onlinecourse:index')
-        else:
-            context['message'] = "Invalid username or password."
-            return render(request, 'onlinecourse/user_login_bootstrap.html', context)
-    else:
+        context['message'] = "Invalid username or password."
         return render(request, 'onlinecourse/user_login_bootstrap.html', context)
+    return render(request, 'onlinecourse/user_login_bootstrap.html', context)
 
 
 def logout_request(request):
@@ -111,7 +100,6 @@ def enroll(request, course_id):
     return HttpResponseRedirect(reverse(viewname='onlinecourse:course_details', args=(course.id,)))
 
 
-# An example method to collect the selected choices from the exam form from the request object
 def extract_answers(request):
     submitted_answers = []
     for key in request.POST:
@@ -122,82 +110,83 @@ def extract_answers(request):
     return submitted_answers
 
 
-# <HINT> Create a submit view to create an exam submission record for a course enrollment
 def submit(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
     user = request.user
 
-    # Must be logged in to submit
     if not user.is_authenticated:
         return redirect('onlinecourse:login')
 
-    # Get the enrollment for this user and course
-    enrollment = Enrollment.objects.filter(user=user, course=course).first()
-    if enrollment is None:
-        # Not enrolled -> redirect back to course detail
-        return HttpResponseRedirect(reverse(viewname='onlinecourse:course_details', args=(course.id,)))
+    enrollment = get_object_or_404(Enrollment, user=user, course=course)
 
-    # Create a submission record
+    # Create submission
     submission = Submission.objects.create(enrollment=enrollment)
 
-    # Collect selected choices and add them to submission
+    # Collect selected choices
     selected_choice_ids = extract_answers(request)
     for choice_id in selected_choice_ids:
-        choice = Choice.objects.get(pk=choice_id)
+        choice = get_object_or_404(Choice, pk=choice_id)
         submission.choices.add(choice)
 
+    submission.save()
+
     return HttpResponseRedirect(
-        reverse(viewname='onlinecourse:show_exam_result', args=(course.id, submission.id))
+        reverse('onlinecourse:show_exam_result', args=(course.id, submission.id))
     )
 
 
-# <HINT> Create an exam result view to check if learner passed exam and show results
 def show_exam_result(request, course_id, submission_id):
     course = get_object_or_404(Course, pk=course_id)
     submission = get_object_or_404(Submission, pk=submission_id)
 
-    # All questions in this course
-    questions = course.question_set.all()
+    # all questions for this course
+    questions = Question.objects.filter(course=course)
 
-    # Selected choices from this submission
+    # selected choices
     selected_choices = submission.choices.all()
-    selected_choice_ids = [c.id for c in selected_choices]
+    selected_choice_ids = set(selected_choices.values_list('id', flat=True))
 
-    total_questions = questions.count()
-    total_correct = 0
+    total_score = 0
+    max_score = 0
 
-    # For each question determine correctness
     question_results = []
-    for question in questions:
-        correct_choices = question.choice_set.filter(is_correct=True)
-        correct_choice_ids = [c.id for c in correct_choices]
+    for q in questions:
+        max_score += q.grade
 
-        # Choices selected for this question
-        selected_for_question = selected_choices.filter(question=question)
-        selected_for_question_ids = [c.id for c in selected_for_question]
+        correct_choice_ids = set(
+            Choice.objects.filter(question=q, is_correct=True).values_list('id', flat=True)
+        )
+        selected_for_q = set(
+            Choice.objects.filter(question=q, id__in=selected_choice_ids).values_list('id', flat=True)
+        )
 
-        # Correct if sets match exactly (selected all correct and no wrong)
-        is_correct = set(selected_for_question_ids) == set(correct_choice_ids)
-
+        # exact match -> full grade
+        is_correct = (selected_for_q == correct_choice_ids) and len(correct_choice_ids) > 0
         if is_correct:
-            total_correct += 1
+            total_score += q.grade
 
         question_results.append({
-            "question": question,
+            "question": q,
+            "selected_for_q": Choice.objects.filter(id__in=selected_for_q),
+            "correct_for_q": Choice.objects.filter(id__in=correct_choice_ids),
             "is_correct": is_correct,
+            "grade": q.grade
         })
 
-    score = 0
-    if total_questions > 0:
-        score = int((total_correct / total_questions) * 100)
+    # pass rule (IBM lab obično 50%+)
+    passed = False
+    percentage = 0
+    if max_score > 0:
+        percentage = round((total_score / max_score) * 100, 2)
+        passed = percentage >= 50
 
     context = {
         "course": course,
         "submission": submission,
-        "selected_choice_ids": selected_choice_ids,
+        "total_score": total_score,
+        "max_score": max_score,
+        "percentage": percentage,
+        "passed": passed,
         "question_results": question_results,
-        "score": score,
-        "total_correct": total_correct,
-        "total_questions": total_questions,
     }
     return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
